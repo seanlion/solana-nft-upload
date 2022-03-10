@@ -1,0 +1,57 @@
+{
+  "name": "uploader",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "nodemon server.js",
+    "build": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "babel": {
+    "presets": [
+      [
+        "@babel/preset-env",
+        {
+          "targets": {
+            "node": "current"
+          }
+        }
+      ],
+      "@babel/preset-typescript"
+    ]
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.36.0",
+    "dotenv": "^16.0.0",
+    "express": "^4.17.3",
+    "mongodb": "^4.4.1",
+    "nodemon": "^2.0.15",
+    "shortid": "^2.2.16",
+    "@metaplex/arweave-cost": "^1.0.4",
+    "@project-serum/anchor": "^0.17.0",
+    "@solana/spl-token": "^0.1.8",
+    "arbundles": "^0.6.12",
+    "arweave": "^1.10.16",
+    "borsh": "^0.4.0",
+    "canvas": "^2.8.0",
+
+    "ipfs-http-client": "^52.0.3",
+    "jsonschema": "^1.4.0",
+    "lodash": "^4.17.21",
+    "loglevel": "^1.7.1",
+    "merge-images": "^2.0.0",
+    "mime": "^3.0.0",
+    "node-fetch": "^2.6.1",
+    "weighted": "^0.3.0",
+    "@metaplex-foundation/mpl-token-metadata": "1.1.0"
+  },
+  "devDependencies": {
+    "@babel/preset-env": "^7.15.6",
+    "@babel/preset-typescript": "^7.15.0",
+    "typescript": "^4.3.5"
+  }
+}
