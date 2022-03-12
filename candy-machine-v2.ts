@@ -7,7 +7,7 @@ import * as anchor from '@project-serum/anchor';
 import {
   chunks,
   fromUTF8Array,
-  getCandyMachineV2Config,
+  getMixtureConfig,
   parsePrice,
   shuffle,
 } from './helpers/various';
@@ -21,13 +21,13 @@ import {
 } from './helpers/constants';
 import {
   getProgramAccounts,
-  loadCandyProgramV2,
+  loadMixtureProgram,
   loadWalletKey,
   AccountAndPubkey,
   deriveCandyMachineV2ProgramAddress,
 } from './helpers/accounts';
 
-import { uploadV2 } from './commands/upload';
+import { uploadArweave } from './commands/upload';
 // import { verifyTokenMetadata } from './commands/verifyTokenMetadata';
 // import { loadCache, saveCache } from './helpers/cache';
 // import { mintV2 } from './commands/mint';
@@ -48,205 +48,32 @@ const supportedImageTypes = {
   'image/gif': 1,
   'image/jpeg': 1,
 };
-const supportedAnimationTypes = {
-  'video/mp4': 1,
-  'video/quicktime': 1,
-  'audio/mpeg': 1,
-  'audio/x-flac': 1,
-  'audio/wav': 1,
-  'model/gltf-binary': 1,
-  'text/html': 1,
-};
 
 if (!fs.existsSync(CACHE_PATH)) {
   fs.mkdirSync(CACHE_PATH);
 }
-log.setLevel(log.levels.INFO);
-// 리턴값 : arweave에 저장된 정보 json 주소
-export async function candyMachineUpload(
-    files:string[],
-    keypair:any,
-    config:string,
-    env:string
+
+// 리턴 : arweave upload한 uri, api status, mixture의 PDA
+export async function candyMachineUpload( // image도 인자로 받아야 할수도.
+    metadata:string,//json
+    keypair:any, // solana keypair 주소
+    env:string,
+    mintIndex: number // 합성할 nft 이름(숫자)
 ){
     const cacheName = 'temp';
     const walletKeyPair = loadWalletKey(keypair);
-    const anchorProgram = await loadCandyProgramV2(walletKeyPair, env, null);
-
-    const {
-      storage,
-      nftStorageKey,
-      ipfsInfuraProjectId,
-      number,
-      ipfsInfuraSecret,
-      arweaveJwk,
-      awsS3Bucket,
-      retainAuthority,
-      mutable,
-      batchSize,
-      price,
-      splToken,
-      treasuryWallet,
-      gatekeeper,
-      endSettings,
-      hiddenSettings,
-      whitelistMintSettings,
-      goLiveDate,
-      uuid,
-    } = await getCandyMachineV2Config(walletKeyPair, anchorProgram, config);
-
-    if (storage === StorageType.ArweaveSol && env !== 'mainnet-beta') {
-      throw new Error(
-        'The arweave-sol storage option only works on mainnet. For devnet, please use either arweave, aws or ipfs\n',
-      );
-    }
-
-    if (storage === StorageType.ArweaveBundle && env !== 'mainnet-beta') {
-      throw new Error(
-        'The arweave-bundle storage option only works on mainnet because it requires spending real AR tokens. For devnet, please set the --storage option to "aws" or "ipfs"\n',
-      );
-    }
-
-    if (storage === StorageType.Arweave) {
-      log.warn(
-        'WARNING: The "arweave" storage option will be going away soon. Please migrate to arweave-bundle or arweave-sol for mainnet.\n',
-      );
-    }
-
-    if (storage === StorageType.ArweaveBundle && !arweaveJwk) {
-      throw new Error(
-        'Path to Arweave JWK wallet file (--arweave-jwk) must be provided when using arweave-bundle',
-      );
-    }
-    if (
-      storage === StorageType.Ipfs &&
-      (!ipfsInfuraProjectId || !ipfsInfuraSecret)
-    ) {
-      throw new Error(
-        'IPFS selected as storage option but Infura project id or secret key were not provided.',
-      );
-    }
-    if (storage === StorageType.NftStorage && !nftStorageKey) {
-      throw new Error(
-        'NftStorage selected as storage option but NftStorage project api key were not provided.',
-      );
-    }
-    if (storage === StorageType.Aws && !awsS3Bucket) {
-      throw new Error(
-        'aws selected as storage option but existing bucket name (--aws-s3-bucket) not provided.',
-      );
-    }
-    if (!Object.values(StorageType).includes(storage)) {
-      throw new Error(
-        `Storage option must either be ${Object.values(StorageType).join(
-          ', ',
-        )}. Got: ${storage}`,
-      );
-    }
-    const ipfsCredentials = {
-      projectId: ipfsInfuraProjectId,
-      secretKey: ipfsInfuraSecret,
-    };
-
-    let imageFileCount = 0;
-    let animationFileCount = 0;
-    let jsonFileCount = 0;
-
-    // Filter out any non-supported file types and find the JSON vs Image file count
-    const supportedFiles = files.filter(it => {
-      if (supportedImageTypes[getType(it)]) {
-        imageFileCount++;
-      } else if (supportedAnimationTypes[getType(it)]) {
-        animationFileCount++;
-      } else if (it.endsWith(EXTENSION_JSON)) {
-        jsonFileCount++;
-      } else {
-        log.warn(`WARNING: Skipping unsupported file type ${it}`);
-        return false;
-      }
-
-      return true;
-    });
-
-    if (animationFileCount !== 0 && storage === StorageType.Arweave) {
-      throw new Error(
-        'The "arweave" storage option is incompatible with animation files. Please try again with another storage option using `--storage <option>`.',
-      );
-    }
-
-    if (animationFileCount !== 0 && animationFileCount !== jsonFileCount) {
-      throw new Error(
-        `number of animation files (${animationFileCount}) is different than the number of json files (${jsonFileCount})`,
-      );
-    } else if (imageFileCount !== jsonFileCount) {
-      throw new Error(
-        `number of img files (${imageFileCount}) is different than the number of json files (${jsonFileCount})`,
-      );
-    }
-
-    const elemCount = number ? number : imageFileCount;
-    if (elemCount < imageFileCount) {
-      throw new Error(
-        `max number (${elemCount}) cannot be smaller than the number of images in the source folder (${imageFileCount})`,
-      );
-    }
-
-    if (animationFileCount === 0) {
-      log.info(`Beginning the upload for ${elemCount} (img+json) pairs`);
-    } else {
-      log.info(
-        `Beginning the upload for ${elemCount} (img+animation+json) sets`,
-      );
-    }
-
-    const startMs = Date.now();
-    log.info('started at: ' + startMs.toString());
-    try {
-      await uploadV2({
-        files: supportedFiles,
-        cacheName,
-        env,
-        totalNFTs: elemCount,
-        gatekeeper,
-        storage,
-        retainAuthority,
-        mutable,
-        nftStorageKey,
-        ipfsCredentials,
-        awsS3Bucket,
-        batchSize,
-        price,
-        treasuryWallet,
-        anchorProgram,
-        walletKeyPair,
-        splToken,
-        endSettings,
-        hiddenSettings,
-        whitelistMintSettings,
-        goLiveDate,
-        uuid,
-        arweaveJwk,
-      }).then((result) => {
-        const status = result['status'];
-        console.log(status);
-        return {
-            "status": status,
-            "content": result['content']
-        }
+    const mixtureProgram = await loadMixtureProgram(walletKeyPair, env);
+    await uploadArweave({
+      metadata,
+      cacheName,
+      env,
+      walletKeyPair,
+      mixtureProgram,
+      mintIndex
+    }).then((result) => {
+      return result;
       });
-    } catch (err) {
-      log.warn('upload was not successful, please re-run.', err);
-      return {
-          "status": false,
-          "content": null
-      }
-    }
-    // const endMs = Date.now();
-    // const timeTaken = new Date(endMs - startMs).toISOString().substr(11, 8);
-    // log.info(
-    //   `ended at: ${new Date(endMs).toISOString()}. time taken: ${timeTaken}`,
-    // );
-}
+ }
 
 // programCommand('withdraw')
 //   .argument('<candy_machine_id>', 'Candy machine id')
@@ -265,7 +92,7 @@ export async function candyMachineUpload(
 //       return;
 //     }
 //     const walletKeypair = loadWalletKey(keypair);
-//     const anchorProgram = await loadCandyProgramV2(walletKeypair, env, rpcUrl);
+//     const mixtureProgram = await loadCandyProgramV2(walletKeypair, env, rpcUrl);
 //     const configOrCommitment = {
 //       commitment: 'confirmed',
 //       filters: [
@@ -278,7 +105,7 @@ export async function candyMachineUpload(
 //       ],
 //     };
 //     const machines: AccountAndPubkey[] = await getProgramAccounts(
-//       anchorProgram.provider.connection,
+//       mixtureProgram.provider.connection,
 //       CANDY_MACHINE_PROGRAM_V2_ID.toBase58(),
 //       configOrCommitment,
 //     );
@@ -311,7 +138,7 @@ export async function candyMachineUpload(
 //       try {
 //         if (currentMachine.account.lamports > 0) {
 //           const tx = await withdrawV2(
-//             anchorProgram,
+//             mixtureProgram,
 //             walletKeypair,
 //             env,
 //             new PublicKey(candyMachineId),
@@ -352,7 +179,7 @@ export async function candyMachineUpload(
 //       return;
 //     }
 //     const walletKeyPair = loadWalletKey(keypair);
-//     const anchorProgram = await loadCandyProgramV2(walletKeyPair, env, rpcUrl);
+//     const mixtureProgram = await loadCandyProgramV2(walletKeyPair, env, rpcUrl);
 //     const configOrCommitment = {
 //       commitment: 'confirmed',
 //       filters: [
@@ -365,7 +192,7 @@ export async function candyMachineUpload(
 //       ],
 //     };
 //     const machines: AccountAndPubkey[] = await getProgramAccounts(
-//       anchorProgram.provider.connection,
+//       mixtureProgram.provider.connection,
 //       CANDY_MACHINE_PROGRAM_V2_ID.toBase58(),
 //       configOrCommitment,
 //     );
@@ -397,7 +224,7 @@ export async function candyMachineUpload(
 //         try {
 //           if (cg.account.lamports > 0) {
 //             const tx = await withdrawV2(
-//               anchorProgram,
+//               mixtureProgram,
 //               walletKeyPair,
 //               env,
 //               new PublicKey(cg.pubkey),
@@ -464,13 +291,13 @@ export async function candyMachineUpload(
 
 //     const cacheContent = loadCache(cacheName, env);
 //     const walletKeyPair = loadWalletKey(keypair);
-//     const anchorProgram = await loadCandyProgramV2(walletKeyPair, env, rpcUrl);
+//     const mixtureProgram = await loadCandyProgramV2(walletKeyPair, env, rpcUrl);
 
-//     const candyMachine = await anchorProgram.provider.connection.getAccountInfo(
+//     const candyMachine = await mixtureProgram.provider.connection.getAccountInfo(
 //       new PublicKey(cacheContent.program.candyMachine),
 //     );
 
-//     const candyMachineObj = await anchorProgram.account.candyMachine.fetch(
+//     const candyMachineObj = await mixtureProgram.account.candyMachine.fetch(
 //       new PublicKey(cacheContent.program.candyMachine),
 //     );
 //     let allGood = true;
@@ -574,11 +401,11 @@ export async function candyMachineUpload(
 //     }
 
 //     const walletKeyPair = loadWalletKey(keypair);
-//     const anchorProgram = await loadCandyProgramV2(walletKeyPair, env, rpcUrl);
+//     const mixtureProgram = await loadCandyProgramV2(walletKeyPair, env, rpcUrl);
 
 //     const candyAddress = new PublicKey(cacheContent.program.candyMachine);
 
-//     const machine = await anchorProgram.account.candyMachine.fetch(
+//     const machine = await mixtureProgram.account.candyMachine.fetch(
 //       candyAddress,
 //     );
 
@@ -612,10 +439,10 @@ export async function candyMachineUpload(
 //     }
 
 //     const walletKeyPair = loadWalletKey(keypair);
-//     const anchorProgram = await loadCandyProgramV2(walletKeyPair, env, rpcUrl);
+//     const mixtureProgram = await loadCandyProgramV2(walletKeyPair, env, rpcUrl);
 
 //     try {
-//       const machine = await anchorProgram.account.candyMachine.fetch(
+//       const machine = await mixtureProgram.account.candyMachine.fetch(
 //         cacheContent.program.candyMachine,
 //       );
 //       const [candyMachineAddr] = await deriveCandyMachineV2ProgramAddress(
@@ -738,11 +565,11 @@ export async function candyMachineUpload(
 //     const newAuthorityKey = newAuthority ? new PublicKey(newAuthority) : null;
 
 //     const walletKeyPair = loadWalletKey(keypair);
-//     const anchorProgram = await loadCandyProgramV2(walletKeyPair, env, rpcUrl);
+//     const mixtureProgram = await loadCandyProgramV2(walletKeyPair, env, rpcUrl);
 
 //     const candyMachine = new PublicKey(cacheContent.program.candyMachine);
 
-//     const candyMachineObj = await anchorProgram.account.candyMachine.fetch(
+//     const candyMachineObj = await mixtureProgram.account.candyMachine.fetch(
 //       candyMachine,
 //     );
 
@@ -759,7 +586,7 @@ export async function candyMachineUpload(
 //       whitelistMintSettings,
 //       goLiveDate,
 //       uuid,
-//     } = await getCandyMachineV2Config(walletKeyPair, anchorProgram, configPath);
+//     } = await getCandyMachineV2Config(walletKeyPair, mixtureProgram, configPath);
 
 //     const newSettings = {
 //       itemsAvailable: number
@@ -794,7 +621,7 @@ export async function candyMachineUpload(
 //         isWritable: false,
 //       });
 //     }
-//     const tx = await anchorProgram.rpc.updateCandyMachine(newSettings, {
+//     const tx = await mixtureProgram.rpc.updateCandyMachine(newSettings, {
 //       accounts: {
 //         candyMachine,
 //         authority: walletKeyPair.publicKey,
@@ -809,7 +636,7 @@ export async function candyMachineUpload(
 //     log.info('update_candy_machine finished', tx);
 
 //     if (newAuthorityKey) {
-//       const tx = await anchorProgram.rpc.updateAuthority(newAuthorityKey, {
+//       const tx = await mixtureProgram.rpc.updateAuthority(newAuthorityKey, {
 //         accounts: {
 //           candyMachine,
 //           authority: walletKeyPair.publicKey,
@@ -895,7 +722,7 @@ export async function candyMachineUpload(
 //     const { keypair, env, cacheName, rpcUrl, batchSize, daemon } = cmd.opts();
 //     const cacheContent = loadCache(cacheName, env);
 //     const walletKeyPair = loadWalletKey(keypair);
-//     const anchorProgram = await loadCandyProgramV2(walletKeyPair, env, rpcUrl);
+//     const mixtureProgram = await loadCandyProgramV2(walletKeyPair, env, rpcUrl);
 
 //     const batchSizeParsed = parseInt(batchSize);
 //     if (!parseInt(batchSize)) {
@@ -912,7 +739,7 @@ export async function candyMachineUpload(
 //     log.debug('Candy machine address: ', cacheContent.program.candyMachine);
 //     log.debug('Batch Size: ', batchSizeParsed);
 //     await signAllMetadataFromCandyMachine(
-//       anchorProgram.provider.connection,
+//       mixtureProgram.provider.connection,
 //       walletKeyPair,
 //       candyMachineAddr.toBase58(),
 //       batchSizeParsed,
@@ -934,7 +761,7 @@ export async function candyMachineUpload(
 //     const cacheContent = loadCache(cacheName, env);
 //     const newCacheContent = loadCache(newCache, env);
 //     const walletKeyPair = loadWalletKey(keypair);
-//     const anchorProgram = await loadCandyProgramV2(walletKeyPair, env, rpcUrl);
+//     const mixtureProgram = await loadCandyProgramV2(walletKeyPair, env, rpcUrl);
 //     const candyAddress = cacheContent.program.candyMachine;
 
 //     const batchSizeParsed = parseInt(batchSize);
@@ -947,7 +774,7 @@ export async function candyMachineUpload(
 //     log.debug('Candy machine address: ', candyAddress);
 //     log.debug('Batch Size: ', batchSizeParsed);
 //     await updateFromCache(
-//       anchorProgram.provider.connection,
+//       mixtureProgram.provider.connection,
 //       walletKeyPair,
 //       candyAddress,
 //       batchSizeParsed,
@@ -963,14 +790,14 @@ export async function candyMachineUpload(
 //     const { keypair, env, cacheName } = cmd.opts();
 //     const cacheContent = loadCache(cacheName, env);
 //     const walletKeyPair = loadWalletKey(keypair);
-//     const anchorProgram = await loadCandyProgramV2(walletKeyPair, env);
+//     const mixtureProgram = await loadCandyProgramV2(walletKeyPair, env);
 //     const candyAddress = cacheContent.program.candyMachine;
 
 //     log.debug('Creator pubkey: ', walletKeyPair.publicKey.toBase58());
 //     log.debug('Environment: ', env);
 //     log.debug('Candy machine address: ', candyAddress);
 
-//     const candyMachine = await anchorProgram.account.candyMachine.fetch(
+//     const candyMachine = await mixtureProgram.account.candyMachine.fetch(
 //       candyAddress,
 //     );
 
@@ -1002,7 +829,7 @@ export async function candyMachineUpload(
 
 //   const cacheContent = loadCache(cacheName, env);
 //   const walletKeyPair = loadWalletKey(keypair);
-//   const anchorProgram = await loadCandyProgramV2(walletKeyPair, env);
+//   const mixtureProgram = await loadCandyProgramV2(walletKeyPair, env);
 
 //   const candyMachineId = new PublicKey(cacheContent.program.candyMachine);
 //   const [candyMachineAddr] = await deriveCandyMachineV2ProgramAddress(
@@ -1011,7 +838,7 @@ export async function candyMachineUpload(
 
 //   const accountsByCreatorAddress = await getAccountsByCreatorAddress(
 //     candyMachineAddr.toBase58(),
-//     anchorProgram.provider.connection,
+//     mixtureProgram.provider.connection,
 //   );
 //   const addresses = accountsByCreatorAddress.map(it => {
 //     return new PublicKey(it[0].mint).toBase58();

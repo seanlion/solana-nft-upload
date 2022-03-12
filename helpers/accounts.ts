@@ -26,7 +26,7 @@ import {
   import * as anchor from '@project-serum/anchor';
   import fs from 'fs';
   import {
-    createCandyMachineV2Account,
+    createMixtureAccount,
     createConfigAccount,
   } from './instructions';
   import { web3 } from '@project-serum/anchor';
@@ -79,32 +79,13 @@ import {
     BurnEveryTime,
     NeverBurn,
   }
-  export interface CandyMachineData {
-    itemsAvailable: anchor.BN;
-    uuid: null | string;
-    symbol: string;
-    sellerFeeBasisPoints: number;
-    isMutable: boolean;
+  export interface MixtureData {
+//    itemsAvailable: anchor.BN;
+//    sellerFeeBasisPoints: number;
+    uuid:null|string,
+    name:string,
+    uri:string,
     maxSupply: anchor.BN;
-    price: anchor.BN;
-    retainAuthority: boolean;
-    gatekeeper: null | {
-      expireOnUse: boolean;
-      gatekeeperNetwork: web3.PublicKey;
-    };
-    goLiveDate: null | anchor.BN;
-    endSettings: null | [number, anchor.BN];
-    whitelistMintSettings: null | {
-      mode: WhitelistMintMode;
-      mint: anchor.web3.PublicKey;
-      presale: boolean;
-      discountPrice: null | anchor.BN;
-    };
-    hiddenSettings: null | {
-      name: string;
-      uri: string;
-      hash: Uint8Array;
-    };
     creators: {
       address: PublicKey;
       verified: boolean;
@@ -112,65 +93,42 @@ import {
     }[];
   }
   
-  export const createCandyMachineV2 = async function (
+  export const createMixtureV2 = async function (
     anchorProgram: anchor.Program,
     payerWallet: Keypair,
-    treasuryWallet: PublicKey,
-    splToken: PublicKey,
-    candyData: CandyMachineData,
+    mixtureData: MixtureData, //candyData에 name, uri를 추가해서 넣는다.
   ) {
-    const candyAccount = Keypair.generate();
-    candyData.uuid = uuidFromConfigPubkey(candyAccount.publicKey);
-  
-    if (!candyData.symbol) {
-      throw new Error(`Invalid config, there must be a symbol.`);
-    }
-  
-    if (!candyData.creators || candyData.creators.length === 0) {
-      throw new Error(`Invalid config, there must be at least one creator.`);
-    }
-  
-    const totalShare = (candyData.creators || []).reduce(
+    const mixtureAccount = Keypair.generate();
+    let uuid = uuidFromConfigPubkey(mixtureAccount.publicKey);
+    mixtureData.uuid = uuid;
+    const totalShare = (mixtureData.creators || []).reduce(
       (acc, curr) => acc + curr.share,
       0,
     );
   
     if (totalShare !== 100) {
       throw new Error(`Invalid config, creators shares must add up to 100`);
-    }
-  
-    const remainingAccounts = [];
-    if (splToken) {
-      remainingAccounts.push({
-        pubkey: splToken,
-        isSigner: false,
-        isWritable: false,
-      });
-    }
+    }  
     return {
-      candyMachine: candyAccount.publicKey,
-      uuid: candyData.uuid,
-      txId: await anchorProgram.rpc.initializeCandyMachine(candyData, {
+      candyMachine: mixtureAccount.publicKey,
+      uuid: uuid,
+      txId: await anchorProgram.rpc.initializeCandyMachine(mixtureData, {
         accounts: {
-          candyMachine: candyAccount.publicKey,
-          wallet: treasuryWallet,
+          candyMachine: mixtureAccount.publicKey,
           authority: payerWallet.publicKey,
           payer: payerWallet.publicKey,
           systemProgram: SystemProgram.programId,
           rent: anchor.web3.SYSVAR_RENT_PUBKEY,
         },
-        signers: [payerWallet, candyAccount],
-        remainingAccounts:
-          remainingAccounts.length > 0 ? remainingAccounts : undefined,
+        signers: [payerWallet, mixtureAccount],
         instructions: [
-          await createCandyMachineV2Account(
+          await createMixtureAccount(
             anchorProgram,
-            candyData,
+            mixtureData,
             payerWallet.publicKey,
-            candyAccount.publicKey,
-          ),
-        ],
-      }),
+            mixtureAccount.publicKey,
+          ),], 
+        }),
     };
   };
   
@@ -570,7 +528,7 @@ import {
     const loaded = Keypair.fromSecretKey(
       new Uint8Array(JSON.parse(fs.readFileSync(keypair).toString())),
     );
-    log.info(`wallet public key: ${loaded.publicKey}`);
+    console.log(`wallet public key: ${loaded.publicKey}`);
     return loaded;
   }
   
@@ -598,20 +556,14 @@ import {
     return program;
   }
   
-  export async function loadCandyProgramV2(
+  export async function loadMixtureProgram(
     walletKeyPair: Keypair,
     env: string,
-    customRpcUrl?: string,
-  ) {
-    if (customRpcUrl) console.log('USING CUSTOM URL', customRpcUrl);
-  
+  ) { 
     // @ts-ignore
     const solConnection = new anchor.web3.Connection(
       //@ts-ignore
-      customRpcUrl || getCluster(env),
-      {
-        confirmTransactionInitialTimeout:  60 * 10 * 1000
-      }
+      getCluster(env),
     );
   
     const walletWrapper = new anchor.Wallet(walletKeyPair);
@@ -619,7 +571,7 @@ import {
       preflightCommitment: 'recent',
     });
     const idl = await anchor.Program.fetchIdl(
-      CANDY_MACHINE_PROGRAM_V2_ID,
+      CANDY_MACHINE_PROGRAM_V2_ID, // MIXTURE ID로 변경
       provider,
     );
     const program = new anchor.Program(
@@ -627,7 +579,7 @@ import {
       CANDY_MACHINE_PROGRAM_V2_ID,
       provider,
     );
-    log.debug('program id from anchor', program.programId.toBase58());
+    console.log('program id from anchor', program.programId.toBase58());
     return program;
   }
   

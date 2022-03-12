@@ -11,39 +11,15 @@ import { Uses, UseMethod } from '@metaplex-foundation/mpl-token-metadata';
 
 const { readFile } = fs.promises;
 
-export async function getCandyMachineV2Config(
+export async function getMixtureConfig(
   walletKeyPair: web3.Keypair,
   anchorProgram: Program,
   configContent: any,
 ): Promise<{
   storage: StorageType;
-  nftStorageKey: string;
-  ipfsInfuraProjectId: string;
   number: number;
-  ipfsInfuraSecret: string;
-  awsS3Bucket: string;
-  retainAuthority: boolean;
-  mutable: boolean;
-  batchSize: number;
   price: BN;
   treasuryWallet: web3.PublicKey;
-  splToken: web3.PublicKey | null;
-  gatekeeper: null | {
-    expireOnUse: boolean;
-    gatekeeperNetwork: web3.PublicKey;
-  };
-  endSettings: null | [number, BN];
-  whitelistMintSettings: null | {
-    mode: any;
-    mint: web3.PublicKey;
-    presale: boolean;
-    discountPrice: null | BN;
-  };
-  hiddenSettings: null | {
-    name: string;
-    uri: string;
-    hash: Uint8Array;
-  };
   goLiveDate: BN | null;
   uuid: string;
   arweaveJwk: string;
@@ -51,162 +27,40 @@ export async function getCandyMachineV2Config(
   if (configContent === undefined) {
     throw new Error('The configContent is undefined');
   }
-  //
 
   //@ts-ignore
-  const config = JSON.parse(configContent);
+  const config = JSON.parse(configContent); // mixture 프로그램 config deserialize
 
   const {
     storage,
-    nftStorageKey,
-    ipfsInfuraProjectId,
     number,
-    ipfsInfuraSecret,
-    awsS3Bucket,
-    noRetainAuthority,
-    noMutable,
-    batchSize,
     price,
-    splToken,
-    splTokenAccount,
     solTreasuryAccount,
-    gatekeeper,
-    endSettings,
-    hiddenSettings,
-    whitelistMintSettings,
     goLiveDate,
     uuid,
     arweaveJwk,
-  } = config;
+  } = config; // json에서 필요한 필드 추출
 
   let wallet;
   let parsedPrice = price;
+  parsedPrice = price * 10 ** 9;
 
-  const splTokenAccountFigured = splTokenAccount
-    ? splTokenAccount
-    : splToken
-    ? (
-        await getAtaForMint(
-          new web3.PublicKey(splToken),
-          walletKeyPair.publicKey,
-        )
-      )[0]
-    : null;
-  if (splToken) {
-    if (solTreasuryAccount) {
-      throw new Error(
-        'If spl-token-account or spl-token is set then sol-treasury-account cannot be set',
-      );
-    }
-    if (!splToken) {
-      throw new Error(
-        'If spl-token-account is set, spl-token must also be set',
-      );
-    }
-    const splTokenKey = new web3.PublicKey(splToken);
-    const splTokenAccountKey = new web3.PublicKey(splTokenAccountFigured);
-    if (!splTokenAccountFigured) {
-      throw new Error(
-        'If spl-token is set, spl-token-account must also be set',
-      );
-    }
+  wallet = solTreasuryAccount
+    ? new web3.PublicKey(solTreasuryAccount)
+    : walletKeyPair.publicKey;
 
-    const token = new Token(
-      anchorProgram.provider.connection,
-      splTokenKey,
-      TOKEN_PROGRAM_ID,
-      walletKeyPair,
-    );
-
-    const mintInfo = await token.getMintInfo();
-    if (!mintInfo.isInitialized) {
-      throw new Error(`The specified spl-token is not initialized`);
-    }
-    const tokenAccount = await token.getAccountInfo(splTokenAccountKey);
-    if (!tokenAccount.isInitialized) {
-      throw new Error(`The specified spl-token-account is not initialized`);
-    }
-    if (!tokenAccount.mint.equals(splTokenKey)) {
-      throw new Error(
-        `The spl-token-account's mint (${tokenAccount.mint.toString()}) does not match specified spl-token ${splTokenKey.toString()}`,
-      );
-    }
-
-    wallet = new web3.PublicKey(splTokenAccountKey);
-    parsedPrice = price * 10 ** mintInfo.decimals;
-    if (
-      whitelistMintSettings?.discountPrice ||
-      whitelistMintSettings?.discountPrice === 0
-    ) {
-      whitelistMintSettings.discountPrice *= 10 ** mintInfo.decimals;
-    }
-  } else {
-    parsedPrice = price * 10 ** 9;
-    if (
-      whitelistMintSettings?.discountPrice ||
-      whitelistMintSettings?.discountPrice === 0
-    ) {
-      whitelistMintSettings.discountPrice *= 10 ** 9;
-    }
-    wallet = solTreasuryAccount
-      ? new web3.PublicKey(solTreasuryAccount)
-      : walletKeyPair.publicKey;
-  }
-
-  if (whitelistMintSettings) {
-    whitelistMintSettings.mint = new web3.PublicKey(whitelistMintSettings.mint);
-    if (
-      whitelistMintSettings?.discountPrice ||
-      whitelistMintSettings?.discountPrice === 0
-    ) {
-      whitelistMintSettings.discountPrice = new BN(
-        whitelistMintSettings.discountPrice,
-      );
-    }
-  }
-
-  if (endSettings) {
-    if (endSettings.endSettingType.date) {
-      endSettings.number = new BN(parseDate(endSettings.value));
-    } else if (endSettings.endSettingType.amount) {
-      endSettings.number = new BN(endSettings.value);
-    }
-    delete endSettings.value;
-  }
-
-  if (hiddenSettings) {
-    const utf8Encode = new TextEncoder();
-    hiddenSettings.hash = utf8Encode.encode(hiddenSettings.hash);
-  }
-
-  if (gatekeeper) {
-    gatekeeper.gatekeeperNetwork = new web3.PublicKey(
-      gatekeeper.gatekeeperNetwork,
-    );
-  }
 
   return {
     storage,
-    nftStorageKey,
-    ipfsInfuraProjectId,
     number,
-    ipfsInfuraSecret,
-    awsS3Bucket,
-    retainAuthority: !noRetainAuthority,
-    mutable: !noMutable,
-    batchSize,
     price: new BN(parsedPrice),
     treasuryWallet: wallet,
-    splToken: splToken ? new web3.PublicKey(splToken) : null,
-    gatekeeper,
-    endSettings,
-    hiddenSettings,
-    whitelistMintSettings,
     goLiveDate: goLiveDate ? new BN(parseDate(goLiveDate)) : null,
-    uuid,
+    uuid,// 현재는 undefined 뜸.
     arweaveJwk,
   };
 }
+
 export async function readJsonFile(fileName: string) {
   const file = await readFile(fileName, 'utf-8');
   return JSON.parse(file);

@@ -13,10 +13,8 @@ mongodb.connect(process.env.DB,{ useUnifiedTopology: true },
     // 정보 담을 db 
     const db =client.db('cluster0')
     // routes에 필요한 인자 넘겨야 함.
-    // _id도 절대 경로로 넘기기, assets는 절대 경로를 string으로 넘기자.
     const _id = process.env.KEYPAIR;
-    const assets = fs.readdirSync(process.env.ASSETS).map(file => path.join(process.env.ASSETS, file));
-    routes(app,db, _id, assets);
+    routes(app,db, _id);
     app.listen(process.env.PORT || 8082, () => {
         console.log('listening on port 8082');
      })

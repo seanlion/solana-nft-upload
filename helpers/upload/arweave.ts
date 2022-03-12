@@ -20,7 +20,7 @@ async function fetchAssetCostToStore(fileSizes: number[]) {
 }
 
 async function upload(data: FormData, manifest, index) {
-  log.debug(`trying to upload image ${index}: ${manifest.name}`);
+  console.log(`trying to upload image ${index}: ${manifest.name}`);
   return await (
     await fetch(ARWEAVE_UPLOAD_ENDPOINT, {
       method: 'POST',
@@ -58,10 +58,10 @@ export async function arweaveUpload(
   walletKeyPair,
   anchorProgram,
   env,
-  image,
+  image, // 이미지 경로를 넣는다.
   manifestBuffer, // TODO rename metadataBuffer
   manifest, // TODO rename metadata
-  index,
+  index, // 이미지 이름(숫자)
 ) {
   const imageExt = path.extname(image);
   const fsStat = await stat(image);
@@ -74,7 +74,7 @@ export async function arweaveUpload(
     manifestBuffer.length,
     estimatedManifestSize,
   ]);
-  log.debug(`lamport cost to store ${image}: ${storageCost}`);
+  console.log(`lamport cost to store ${image}: ${storageCost}`);
 
   const instructions = [
     anchor.web3.SystemProgram.transfer({
@@ -91,7 +91,7 @@ export async function arweaveUpload(
     [],
     'confirmed',
   );
-  log.debug(`solana transaction (${env}) for arweave payment:`, tx);
+  console.log(`solana transaction (${env}) for arweave payment:`, tx);
 
   const data = new FormData();
   data.append('transaction', tx['txid']);
@@ -115,8 +115,8 @@ export async function arweaveUpload(
     const imageLink = `https://arweave.net/${
       imageFile.transactionId
     }?ext=${imageExt.replace('.', '')}`;
-    log.debug(`File uploaded: ${link}`);
-    return [link, imageLink];
+    console.log(`File uploaded: ${link}`);
+    return [link, imageLink]; // json이랑 image 따로 리턴
   } else {
     // @todo improve
     throw new Error(`No transaction ID for upload: ${index}`);

@@ -2,13 +2,14 @@ import { readFile } from 'fs/promises';
 import path from 'path';
 import log from 'loglevel';
 import {
-  createCandyMachineV2,
+  createMixtureV2,
   loadCandyProgram,
   loadWalletKey,
 } from '../helpers/accounts';
 import { PublicKey } from '@solana/web3.js';
 import fs from 'fs';
 import { BN, Program, web3 } from '@project-serum/anchor';
+import { uuidFromConfigPubkey } from '../helpers/accounts';
 
 import { loadCache, saveCache } from '../helpers/cache';
 import { arweaveUpload } from '../helpers/upload/arweave';
@@ -21,375 +22,147 @@ import { AssetKey } from '../types';
 import { chunks } from '../helpers/various';
 import { nftStorageUpload } from '../helpers/upload/nft-storage';
 
-export async function uploadV2({
-  files,
+export async function uploadArweave({
+  metadata, 
   cacheName,
   env,
-  totalNFTs,
-  storage,
-  retainAuthority,
-  mutable,
-  nftStorageKey,
-  ipfsCredentials,
-  awsS3Bucket,
-  batchSize,
-  price,
-  treasuryWallet,
-  splToken,
-  gatekeeper,
-  goLiveDate,
-  endSettings,
-  whitelistMintSettings,
-  hiddenSettings,
-  uuid,
   walletKeyPair,
-  anchorProgram,
-  arweaveJwk,
+  mixtureProgram,
+  mintIndex//재료 nft들의 이름을 계산해서 부모 nft image 이름 
 }: {
-  files: string[];
+  metadata: string;
   cacheName: string;
   env: string;
-  totalNFTs: number;
-  storage: string;
-  retainAuthority: boolean;
-  mutable: boolean;
-  nftStorageKey: string;
-  ipfsCredentials: ipfsCreds;
-  awsS3Bucket: string;
-  batchSize: number;
-  price: BN;
-  treasuryWallet: PublicKey;
-  splToken: PublicKey;
-  gatekeeper: null | {
-    expireOnUse: boolean;
-    gatekeeperNetwork: web3.PublicKey;
-  };
-  goLiveDate: null | BN;
-  endSettings: null | [number, BN];
-  whitelistMintSettings: null | {
-    mode: any;
-    mint: PublicKey;
-    presale: boolean;
-    discountPrice: null | BN;
-  };
-  hiddenSettings: null | {
-    name: string;
-    uri: string;
-    hash: Uint8Array;
-  };
-  uuid: string;
   walletKeyPair: web3.Keypair;
-  anchorProgram: Program;
-  arweaveJwk: string;
+  mixtureProgram: Program;
+  mintIndex: number;
 }): Promise<object> {
-  let uploadSuccessful = true;
   const savedContent = loadCache(cacheName, env);
   const cacheContent = savedContent || {};
-
-  if (!cacheContent.program) {
-    cacheContent.program = {};
-  }
 
   if (!cacheContent.items) {
     cacheContent.items = {};
   }
-
-  const dedupedAssetKeys = getAssetKeysNeedingUpload(cacheContent.items, files);
-  const SIZE = dedupedAssetKeys.length;
-
-  const dirname = path.dirname(files[0]);
-  let candyMachine = cacheContent.program.candyMachine
-    ? new PublicKey(cacheContent.program.candyMachine)
-    : undefined;
-
-  if (!cacheContent.program.uuid) {
-    const firstAssetManifest = getAssetManifest(dirname, '0.json');
-
+   let mixturePDA;
+  
+  // 변경하는 버전은 이미 특정 메타데이터를 들고 있으니 Manifest은 받은 json이어야 한다.
+  let metadataJSON = JSON.parse(metadata);
+  const result = await UploadData(
+    metadata, 
+    mintIndex, 
+    walletKeyPair,
+    mixtureProgram,
+    env,
+    ) // metadata json, 
+  if (result.status === "success"){
+    console.log(`initializing candy machine`);
+    // arweave upload 한 다으메 createMixture로 name과 uri가 올라가면 cache json의 onChain을 true로 바꿔서 업데이트 해야 함.
     try {
-      const remainingAccounts = [];
-
-      if (splToken) {
-        const splTokenKey = new PublicKey(splToken);
-
-        remainingAccounts.push({
-          pubkey: splTokenKey,
-          isWritable: false,
-          isSigner: false,
-        });
-      }
-
-      if (
-        !firstAssetManifest.properties?.creators?.every(
-          creator => creator.address !== undefined,
-        )
-      ) {
-        throw new Error('Creator address is missing');
-      }
-
-      // initialize candy
-      log.info(`initializing candy machine`);
-      const res = await createCandyMachineV2(
-        anchorProgram,
+      const res = await createMixtureV2(
+        mixtureProgram,
         walletKeyPair,
-        treasuryWallet,
-        splToken,
-        {
-          itemsAvailable: new BN(totalNFTs),
-          uuid,
-          symbol: firstAssetManifest.symbol,
-          sellerFeeBasisPoints: firstAssetManifest.seller_fee_basis_points,
-          isMutable: mutable,
+        { 
+          uuid : null,
+          name: metadataJSON.name,
+          uri: result.link,
           maxSupply: new BN(0),
-          retainAuthority: retainAuthority,
-          gatekeeper,
-          goLiveDate,
-          price,
-          endSettings,
-          whitelistMintSettings,
-          hiddenSettings,
-          creators: firstAssetManifest.properties.creators.map(creator => {
+          creators: metadataJSON.properties.creators.map(creator => {
             return {
               address: new PublicKey(creator.address),
               verified: true,
               share: creator.share,
             };
           }),
-        },
-      );
-      cacheContent.program.uuid = res.uuid;
-      cacheContent.program.candyMachine = res.candyMachine.toBase58();
-      candyMachine = res.candyMachine;
-
-      log.info(
-        `initialized config for a candy machine with publickey: ${res.candyMachine.toBase58()}`,
-      );
-
-      saveCache(cacheName, env, cacheContent);
-    } catch (exx) {
-      log.error('Error deploying config to Solana network.', exx);
-      throw exx;
-    }
-  } else {
-    log.info(
-      `config for a candy machine with publickey: ${cacheContent.program.candyMachine} has been already initialized`,
-    );
-  }
-
-  console.log('Uploading Size', SIZE, dedupedAssetKeys[0]);
-
-  if (dedupedAssetKeys.length) {
-    if (
-      storage === StorageType.ArweaveBundle ||
-      storage === StorageType.ArweaveSol
-    ) {
-      // Initialize the Arweave Bundle Upload Generator.
-      // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Generator
-      const arweaveBundleUploadGenerator = makeArweaveBundleUploadGenerator(
-        storage,
-        dirname,
-        dedupedAssetKeys,
-        storage === StorageType.ArweaveBundle
-          ? JSON.parse((await readFile(arweaveJwk)).toString())
-          : undefined,
-        storage === StorageType.ArweaveSol ? walletKeyPair : undefined,
-      );
-
-      let result = arweaveBundleUploadGenerator.next();
-      // Loop over every uploaded bundle of asset filepairs (PNG + JSON)
-      // and save the results to the Cache object, persist it to the Cache file.
-      while (!result.done) {
-        const { cacheKeys, arweavePathManifestLinks, updatedManifests } =
-          await result.value;
-        updateCacheAfterUpload(
-          cacheContent,
-          cacheKeys,
-          arweavePathManifestLinks,
-          updatedManifests,
+        },);
+        //cacheContent.program.candyMachine = res.candyMachine.toBase58();
+        mixturePDA = res.candyMachine.toBase58();
+        let mixture = res.candyMachine;
+        console.log(
+          `initialized config for a candy machine with publickey: ${mixturePDA}`,
         );
+        cacheContent.items[mintIndex] = {
+          uuid : res.uuid, 
+          mixture: mixturePDA,
+          link : result.link,
+          name: metadataJSON.name,
+          onChain: true,
+        };      
+        // saveCache할 때 처음 json 만들고 나서는 item에만 추가해야 함. onChain true로 업데이트
         saveCache(cacheName, env, cacheContent);
-        log.info('Saved bundle upload result to cache.');
-        result = arweaveBundleUploadGenerator.next();
-      }
-      log.info('Upload done.');
-    } else {
-      let lastPrinted = 0;
-      const tick = SIZE / 100; //print every one percent
-
-      await Promise.all(
-        chunks(Array.from(Array(SIZE).keys()), batchSize || 50).map(
-          async allIndexesInSlice => {
-            for (let i = 0; i < allIndexesInSlice.length; i++) {
-              const assetKey = dedupedAssetKeys[allIndexesInSlice[i]];
-              const manifest = getAssetManifest(
-                dirname,
-                assetKey.index.includes('json')
-                  ? assetKey.index
-                  : `${assetKey.index}.json`,
-              );
-
-              if (
-                allIndexesInSlice[i] >= lastPrinted + tick ||
-                allIndexesInSlice[i] === 0
-              ) {
-                lastPrinted = allIndexesInSlice[i];
-                log.info(`Processing asset: ${allIndexesInSlice[i]}`);
-              }
-
-              const image = path.join(dirname, `${manifest.image}`);
-
-              let animation = undefined;
-              if ('animation_url' in manifest) {
-                animation = path.join(dirname, `${manifest.animation_url}`);
-              }
-
-              const manifestBuffer = Buffer.from(JSON.stringify(manifest));
-
-              let link, imageLink, animationLink;
-              try {
-                switch (storage) {
-                  case StorageType.NftStorage:
-                    [link, imageLink, animationLink] = await nftStorageUpload(
-                      nftStorageKey,
-                      image,
-                      animation,
-                      manifestBuffer,
-                    );
-                    break;
-                  case StorageType.Ipfs:
-                    [link, imageLink, animationLink] = await ipfsUpload(
-                      ipfsCredentials,
-                      image,
-                      animation,
-                      manifestBuffer,
-                    );
-                    break;
-                  case StorageType.Aws:
-                    [link, imageLink, animationLink] = await awsUpload(
-                      awsS3Bucket,
-                      image,
-                      animation,
-                      manifestBuffer,
-                    );
-                    break;
-                  case StorageType.Arweave:
-                  default:
-                    [link, imageLink] = await arweaveUpload(
-                      walletKeyPair,
-                      anchorProgram,
-                      env,
-                      image,
-                      manifestBuffer,
-                      manifest,
-                      assetKey.index,
-                    );
-                }
-                if (
-                  animation
-                    ? link && imageLink && animationLink
-                    : link && imageLink
-                ) {
-                  log.debug('Updating cache for ', allIndexesInSlice[i]);
-                  cacheContent.items[assetKey.index] = {
-                    link,
-                    name: manifest.name,
-                    onChain: false,
-                  };
-                  saveCache(cacheName, env, cacheContent);
-                }
-              } catch (err) {
-                if (animation) {
-                  log.error(
-                    `Error uploading files ${manifest.image} + ${manifest.animation_url}`,
-                    err,
-                  );
-                } else {
-                  log.error(`Error uploading file ${manifest.image}`, err);
-                }
-                i--;
-              }
-            }
-          },
-        ),
-      );
+        return {
+          status: "success", 
+          arweaveLink: result.link,
+          mixture:  mixturePDA
+        };
     }
-
-    saveCache(cacheName, env, cacheContent);
-  }
-
-  const keys = Object.keys(cacheContent.items);
-  // hidden 아닐 경우
-  if (!hiddenSettings) {
-    try {
-      await Promise.all(
-        chunks(Array.from(Array(keys.length).keys()), 1000).map(
-          async allIndexesInSlice => {
-            for (
-              let offset = 0;
-              offset < allIndexesInSlice.length;
-              offset += 10
-            ) {
-              const indexes = allIndexesInSlice.slice(offset, offset + 10);
-              const onChain = indexes.filter(i => {
-                const index = keys[i];
-                return cacheContent.items[index]?.onChain || false;
-              });
-              const ind = keys[indexes[0]];
-
-              if (onChain.length != indexes.length) {
-                log.info(
-                  `Writing indices ${ind}-${keys[indexes[indexes.length - 1]]}`,
-                );
-                try {
-                  await anchorProgram.rpc.addConfigLines(
-                    ind,
-                    indexes.map(i => ({
-                      uri: cacheContent.items[keys[i]].link,
-                      name: cacheContent.items[keys[i]].name,
-                    })),
-                    {
-                      accounts: {
-                        candyMachine,
-                        authority: walletKeyPair.publicKey,
-                      },
-                      signers: [walletKeyPair],
-                    },
-                  );
-                  indexes.forEach(i => {
-                    cacheContent.items[keys[i]] = {
-                      ...cacheContent.items[keys[i]],
-                      onChain: true,
-                      verifyRun: false,
-                    };
-                  });
-                  saveCache(cacheName, env, cacheContent);
-                } catch (e) {
-                  log.error(
-                    `saving config line ${ind}-${
-                      keys[indexes[indexes.length - 1]]
-                    } failed`,
-                    e,
-                  );
-                  uploadSuccessful = false;
-                }
-              }
-            }
-          },
-        ),
-      );
-    } catch (e) {
-      log.error(e);
-    } finally {
-      saveCache(cacheName, env, cacheContent);
+    catch(err){
+      console.log("Throw an error when createMixture");
+      return {
+        status: "fail", 
+        arweaveLink: null,
+        mixture:  null
+      };
     }
-  } else {
-    log.info('Skipping upload to chain as this is a hidden Candy Machine');
   }
+  else{
+    return {
+      status: "fail", 
+      content: null,
+      mixture:  null
+    }
+  } 
+}
 
-  console.log(`Done. Successful = ${uploadSuccessful}.`);
-  return {
-      "status": uploadSuccessful, 
-      "content": cacheContent
+async function UploadData(
+  metadata,
+  mint_index,
+  walletKeyPair,
+  mixtureProgram,
+  env,
+) : Promise<{
+  link: string;
+  imageLink: string;
+  status: string;
+}>{
+  // 이미 metadata json(manifest)는 받았기 때문에 받은거 쓰면 됨.
+  const manifest = JSON.parse(metadata);
+  const imagePath = path.join(process.env.ASSETS, `${mint_index}.png`);
+  // assets 폴더에서 mint_index 이름을 가진 png 파일이 있는지 찾아서 쓴다.
+  if (fs.existsSync(imagePath)) {
+    manifest.image = `${mint_index}.png`;
+  }
+  else{
+    return {
+      link : null,
+      imageLink: null,
+      status : "fail"
     };
+  }
+  const manifestBuffer = Buffer.from(JSON.stringify(manifest));
+  //const fileNameIndex = manifest.image.substring(0, manifest.image.length - 4) // 예를 들어 0.png. 확장자는 png로만 가정함.
+  let link, imageLink;
+  try {
+        [link, imageLink] = await arweaveUpload(
+          walletKeyPair,
+          mixtureProgram,
+          env,
+          manifest.image,
+          manifestBuffer,
+          manifest,
+          mint_index, //합성 NFT 파일명
+        );
+        return {
+          link: link,
+          imageLink: imageLink,
+          status: "success"
+        }
+  } catch (err) {
+      return {
+        link: null,
+        imageLink: null,
+        status: "fail"
+      }
+  }
 }
 
 /**
@@ -416,7 +189,7 @@ type Manifest = {
   symbol: string;
   seller_fee_basis_points: number;
   properties: {
-    files: Array<{ type: string; uri: string }>;
+    metadata: Array<{ type: string; uri: string }>;
     creators: Array<{
       address: string;
       share: number;
@@ -432,12 +205,12 @@ type Manifest = {
  */
 function getAssetKeysNeedingUpload(
   items: Cache['items'],
-  files: string[],
+  metadata: string[],
 ): AssetKey[] {
   const all = [
     ...new Set([
       ...Object.keys(items),
-      ...files.map(filePath => path.basename(filePath)),
+      ...metadata.map(filePath => path.basename(filePath)),
     ]),
   ];
   const keyMap = {};
@@ -461,13 +234,15 @@ function getAssetKeysNeedingUpload(
  * Replaces image.ext => index.ext
  * Replaces animation_url.ext => index.ext
  */
+// 파일에 대한 메타데이터 객체 가지고 오기
 function getAssetManifest(dirname: string, assetKey: string): Manifest {
+  // assetKey가 0.json이면 0만 가지고 오게 함
   const assetIndex = assetKey.includes('.json')
     ? assetKey.substring(0, assetKey.length - 5)
     : assetKey;
   const manifestPath = path.join(dirname, `${assetIndex}.json`);
   const manifest: Manifest = JSON.parse(
-    fs.readFileSync(manifestPath).toString(),
+    fs.readFilesync(manifestPath).toString(),
   );
   manifest.image = manifest.image.replace('image', assetIndex);
   if ('animation_url' in manifest) {
@@ -586,7 +361,7 @@ function updateCacheAfterUpload(
 }
 
 type UploadParams = {
-  files: string[];
+  metadata: string[];
   cacheName: string;
   env: string;
   keypair: string;
@@ -598,7 +373,7 @@ type UploadParams = {
   batchSize: number;
 };
 export async function upload({
-  files,
+  metadata,
   cacheName,
   env,
   keypair,
@@ -631,9 +406,9 @@ export async function upload({
   cache.items = cache.items || {};
 
   // Retrieve the directory path where the assets are located.
-  const dirname = path.dirname(files[0]);
+  const dirname = path.dirname(metadata[0]);
   // Compile a sorted list of assets which need to be uploaded.
-  const dedupedAssetKeys = getAssetKeysNeedingUpload(cache.items, files);
+  const dedupedAssetKeys = getAssetKeysNeedingUpload(cache.items, metadata);
   
   // Initialize variables that might be needed for uploded depending on storage
   // type.
@@ -684,7 +459,7 @@ export async function upload({
       }
       log.info('Upload done.');
     } else {
-      // For other storage methods, we upload the files individually.
+      // For other storage methods, we upload the metadata individually.
       const SIZE = dedupedAssetKeys.length;
       const tick = SIZE / 100; // print every one percent
       let lastPrinted = 0;
