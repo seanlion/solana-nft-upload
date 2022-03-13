@@ -1,18 +1,21 @@
 {
-    "compilerOptions": {
-      "moduleResolution": "node",
-      "target": "es6",
-      "module": "es2015",
-      "lib": ["es2015", "es2016", "es2017", "dom"],
-      "strict": true,
-      "sourceMap": true,
-      "declaration": true,
-      "allowSyntheticDefaultImports": true,
-      "experimentalDecorators": true,
-      "emitDecoratorMetadata": true,
-      "noImplicitAny": true,
-      "typeRoots": ["types", "node_modules/@types"]
-    },
-    "include": ["src/**/*"]
+  "compilerOptions": {
+    "target": "es6", // 어떤 버전으로 컴파일할지 작성 
+    "module": "commonjs", //어떤 모듈 방식으로 컴파일할지 설정
+    "outDir": "./../build",	//컴파일 후 js 파일들이 생성되는 곳
+    "rootDir": ".",	//루트 폴더
+    "moduleResolution": "node",	//모듈 해석 방법 설정: 'node' (Node.js)
+    "esModuleInterop": true,
+    "allowJs": true,
+    "baseUrl": "src",
+    "declaration": false,
+    "noImplicitAny": false,
+    "isolatedModules": false,
+    "experimentalDecorators": true,
+    "downlevelIteration": true,
+    "emitDecoratorMetadata": true,
+    "noLib": false,
+    "preserveConstEnums": true,
+    "suppressImplicitAnyIndexErrors": true,
   }
-  
+}
