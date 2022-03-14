@@ -13,7 +13,6 @@ import {
   } from '@solana/web3.js';
   import { getUnixTs, sleep } from './various';
   import { DEFAULT_TIMEOUT } from './constants';
-  import log from 'loglevel';
   
   interface BlockhashAndFeeCalculator {
     blockhash: Blockhash;
@@ -86,7 +85,7 @@ import {
       },
     );
   
-    log.debug('Started awaiting confirmation for', txid);
+    console.log('Started awaiting confirmation for', txid);
   
     let done = false;
     (async () => {
@@ -110,13 +109,13 @@ import {
         throw new Error('Timed out awaiting confirmation on transaction');
   
       if (confirmation.err) {
-        log.error(confirmation.err);
+        console.log(confirmation.err);
         throw new Error('Transaction failed: Custom instruction error');
       }
   
       slot = confirmation?.slot || 0;
     } catch (err:any) {
-      log.error('Timeout Error caught', err);
+      console.log('Timeout Error caught', err);
       if (err.timeout) {
         throw new Error('Timed out awaiting confirmation on transaction');
       }
@@ -126,7 +125,7 @@ import {
           await simulateTransaction(connection, signedTransaction, 'single')
         ).value;
       } catch (e) {
-        log.error('Simulate Transaction error', e);
+        console.log('Simulate Transaction error', e);
       }
       if (simulateResult && simulateResult.err) {
         if (simulateResult.logs) {
@@ -141,13 +140,13 @@ import {
         }
         throw new Error(JSON.stringify(simulateResult.err));
       }
-      log.error('Got this far.');
+      console.log('Got this far.');
       // throw new Error('Transaction failed');
     } finally {
       done = true;
     }
   
-    log.debug('Latency (ms)', txid, getUnixTs() - startTime);
+    console.log('Latency (ms)', txid, getUnixTs() - startTime);
     return { txid, slot };
   }
   
@@ -198,7 +197,7 @@ import {
           return;
         }
         done = true;
-        log.warn('Rejecting for timeout...');
+        console.log('Rejecting for timeout...');
         reject({ timeout: true });
       }, timeout);
       try {
@@ -212,10 +211,10 @@ import {
               confirmations: 0,
             };
             if (result.err) {
-              log.warn('Rejected via websocket', result.err);
+              console.log('Rejected via websocket', result.err);
               reject(status);
             } else {
-              log.debug('Resolved via websocket', result);
+              console.log('Resolved via websocket', result);
               resolve(status);
             }
           },
@@ -223,7 +222,7 @@ import {
         );
       } catch (e) {
         done = true;
-        log.error('WS error in setup', txid, e);
+        console.log('WS error in setup', txid, e);
       }
       while (!done && queryStatus) {
         // eslint-disable-next-line no-loop-func
@@ -235,22 +234,22 @@ import {
             status = signatureStatuses && signatureStatuses.value[0];
             if (!done) {
               if (!status) {
-                log.debug('REST null result for', txid, status);
+                console.log('REST null result for', txid, status);
               } else if (status.err) {
-                log.error('REST error for', txid, status);
+                console.log('REST error for', txid, status);
                 done = true;
                 reject(status.err);
               } else if (!status.confirmations) {
-                log.debug('REST no confirmations for', txid, status);
+                console.log('REST no confirmations for', txid, status);
               } else {
-                log.debug('REST confirmation for', txid, status);
+                console.log('REST confirmation for', txid, status);
                 done = true;
                 resolve(status);
               }
             }
           } catch (e) {
             if (!done) {
-              log.error('REST connection error: txid', txid, e);
+              console.log('REST connection error: txid', txid, e);
             }
           }
         })();
@@ -262,7 +261,7 @@ import {
     if (connection._signatureSubscriptions[subId])
       connection.removeSignatureListener(subId);
     done = true;
-    log.debug('Returning status', status);
+    console.log('Returning status', status);
     return status;
   }
   

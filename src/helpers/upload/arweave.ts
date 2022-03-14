@@ -2,7 +2,6 @@ import * as anchor from '@project-serum/anchor';
 import FormData from 'form-data';
 import fs from 'fs';
 import path from 'path';
-import log from 'loglevel';
 import fetch from 'node-fetch';
 import { stat } from 'fs/promises';
 import { calculate } from '@metaplex/arweave-cost';
@@ -15,7 +14,7 @@ const ARWEAVE_UPLOAD_ENDPOINT =
 
 async function fetchAssetCostToStore(fileSizes: number[]) {
   const result = await calculate(fileSizes);
-  log.debug('Arweave cost estimates:', result);
+  console.log('Arweave cost estimates:', result);
 
   return result.solana * anchor.web3.LAMPORTS_PER_SOL;
 }
@@ -53,7 +52,7 @@ function estimateManifestSize(filenames: string[]) {
   };
 
   const data = Buffer.from(JSON.stringify(manifest), 'utf8');
-  log.debug('Estimated manifest size:', data.length);
+  console.log('Estimated manifest size:', data.length);
   return data.length;
 }
 
@@ -62,10 +61,11 @@ export async function arweaveUpload(
   anchorProgram:Program,
   env:string,
   image:any, // 이미지 경로를 넣는다.
-  manifestBuffer:any, // TODO rename metadataBuffer
-  manifest:any, // TODO rename metadata
+  manifestBuffer:any,
+  manifest:any,
   index:number, // 이미지 이름(숫자)
 ) {
+  console.log("image in arweaveUpload:", image);
   const imageExt = path.extname(image);
   const fsStat = await stat(image);
   const estimatedManifestSize = estimateManifestSize([
@@ -95,7 +95,7 @@ export async function arweaveUpload(
     'confirmed',
   );
   console.log(`solana transaction (${env}) for arweave payment:`, tx);
-
+  console.log("mainifest buffer : ", manifestBuffer.toString());
   const data = new FormData();
   data.append('transaction', tx['txid']);
   data.append('env', env);
@@ -104,9 +104,8 @@ export async function arweaveUpload(
     contentType: `image/${imageExt.replace('.', '')}`,
   });
   data.append('file[]', manifestBuffer, 'metadata.json');
-
   const result = await upload(data, manifest, index);
-
+  console.log("result : ", result);
   const metadataFile = result.messages?.find(
     (m:any) => m.filename === 'manifest.json',
   );

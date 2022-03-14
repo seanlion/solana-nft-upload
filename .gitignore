@@ -117,5 +117,7 @@ dist
 .yarn/install-state.gz
 .pnp.*
 
-#보안관련해서..
 package-lock.json
+.cache/
+_genid.json
+todo.md
