@@ -37,7 +37,7 @@ function estimateManifestSize(filenames: string[]) {
 
   for (const name of filenames) {
     paths[name] = {
-      id: 'artestaC_testsEaEmAGFtestEGtestmMGmgMGAV438',
+      id: 'artestaD_testsEaEmAGFtestEGtestmMGmgMGAV438',
       ext: path.extname(name).replace('.', ''),
     };
   }

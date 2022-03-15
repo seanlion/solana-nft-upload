@@ -6,7 +6,7 @@ import {
   } from '@solana/web3.js';
 import {
 
-  CANDY_MACHINE_PROGRAM_V2_ID,
+  MIXTURE_PROGRAM_ID,
 } from './constants';
 import * as anchor from '@project-serum/anchor';
 import fs from 'fs';
@@ -30,34 +30,34 @@ export enum WhitelistMintMode { // TODO : 삭제예정
   NeverBurn,
 }
 export interface MixtureData {
-  itemsAvailable: anchor.BN;
-  symbol: string;
-  sellerFeeBasisPoints: number;
-  isMutable: boolean;
-  price: anchor.BN;
-  retainAuthority: boolean;
-  gatekeeper: null | {
-    expireOnUse: boolean;
-    gatekeeperNetwork: web3.PublicKey;
-  };
-  goLiveDate: null | anchor.BN;
-  endSettings: null | [number, anchor.BN];
-  whitelistMintSettings: null | {
-    mode: WhitelistMintMode;
-    mint: anchor.web3.PublicKey;
-    presale: boolean;
-    discountPrice: null | anchor.BN;
-  };
-  hiddenSettings: null | {
-    name: string;
-    uri: string;
-    hash: Uint8Array;
-  };
+  // itemsAvailable: anchor.BN;
+  // symbol: string;
+  // sellerFeeBasisPoints: number;
+  // isMutable: boolean;
+  // price: anchor.BN;
+  // retainAuthority: boolean;
+  // gatekeeper: null | {
+  //   expireOnUse: boolean;
+  //   gatekeeperNetwork: web3.PublicKey;
+  // };
+  // goLiveDate: null | anchor.BN;
+  // endSettings: null | [number, anchor.BN];
+  // whitelistMintSettings: null | {
+  //   mode: WhitelistMintMode;
+  //   mint: anchor.web3.PublicKey;
+  //   presale: boolean;
+  //   discountPrice: null | anchor.BN;
+  // };
+  // hiddenSettings: null | {
+  //   name: string;
+  //   uri: string;
+  //   hash: Uint8Array;
+  // };
 
   uuid:null|string;
   name:string;
   uri:string;
-  maxSupply: anchor.BN;
+  symbol: string;
   creators: {
     address: PublicKey;
     verified: boolean;
@@ -77,9 +77,6 @@ export interface MixtureData {
       (acc, curr) => acc + curr.share,
       0,
     );
-  
-    // TODO : 임시코드
-    let wallet = new web3.PublicKey('6J24eGqaKGTWtxWM666CTnDodJo4apKgQMPA5uFGYg7Y');
 
     if (totalShare !== 100) {
       throw new Error(`Invalid config, creators shares must add up to 100`);
@@ -87,19 +84,15 @@ export interface MixtureData {
     return {
       mixtureMachine: mixtureAccount.publicKey,
       uuid: uuid,
-      txId: await anchorProgram.rpc.initializeCandyMachine(mixtureData, {
+      txId: await anchorProgram.rpc.initializeMixtureMachine(mixtureData, {
         accounts: {
-          candyMachine: mixtureAccount.publicKey, // TODO : mixture로 변경하기
-          
-          wallet : wallet,// TODO : 삭제 예정
-
+          mixtureMachine: mixtureAccount.publicKey, // TODO : mixture로 변경하기          
           authority: payerWallet.publicKey,
           payer: payerWallet.publicKey,
           systemProgram: SystemProgram.programId,
           rent: anchor.web3.SYSVAR_RENT_PUBKEY,
         },
         signers: [payerWallet, mixtureAccount],
-        remainingAccounts: undefined,
         instructions: [
           await createMixtureAccount(
             anchorProgram,
@@ -142,12 +135,12 @@ export async function loadMixtureProgram(
     preflightCommitment: 'recent',
   });
   const idl = await anchor.Program.fetchIdl(
-    CANDY_MACHINE_PROGRAM_V2_ID, // TODO : MIXTURE ID로 변경
+    MIXTURE_PROGRAM_ID,
     provider,
   );
   const program = new anchor.Program(
     idl as anchor.Idl,
-    CANDY_MACHINE_PROGRAM_V2_ID,  // TODO : MIXTURE ID로 변경
+    MIXTURE_PROGRAM_ID,
     provider,
   );
   console.log('program id from anchor', program.programId.toBase58());

@@ -51,22 +51,10 @@ export async function uploadArweave({
         mixtureProgram,
         walletKeyPair,
         { 
-          itemsAvailable: new BN(1),
-          symbol: "BNB",
-          sellerFeeBasisPoints: 100,
-          isMutable: false,
-          retainAuthority: false,
-          gatekeeper: null,
-          goLiveDate: null,
-          price: new BN(0),
-          endSettings: null,
-          whitelistMintSettings: null,
-          hiddenSettings: null,
           uuid : null,
-
           name: metadataJSON.name,
           uri: result.link,
-          maxSupply: new BN(0),
+          symbol: metadataJSON.symbol,
           creators: metadataJSON.properties.creators.map((creator:{address:string, share:number}) => {
             return {
               address: new PublicKey(creator.address),
