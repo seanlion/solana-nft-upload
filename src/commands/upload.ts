@@ -15,7 +15,8 @@ export async function uploadArweave({
   env,
   walletKeyPair,
   mixtureProgram,
-  mintIndex//재료 nft들의 이름을 계산해서 부모 nft image 이름 
+  mintIndex,//재료 nft들의 이름을 계산해서 부모 nft image 이름 
+  parentTokenAddress
 }: {
   metadata: any;
   cacheName: string;
@@ -23,6 +24,7 @@ export async function uploadArweave({
   walletKeyPair: web3.Keypair;
   mixtureProgram: Program;
   mintIndex: number;
+  parentTokenAddress: string;
 }):Promise<{ 
   status: string; 
   arweaveLink: string; 
@@ -43,13 +45,14 @@ export async function uploadArweave({
     mixtureProgram,
     env,
     ) // metadata json, 
-  console.log("UploadData result : ", result);
-  if (result.status === "success"){
+ if (result.status === "success"){
     console.log(`initializing mixture machine`);
     try {
+      const parentTokenPubkey = new PublicKey(parentTokenAddress);
       const res = await createMixture( // 부모 nft 주소를 넘겨서 seed로 써야함.
         mixtureProgram,
         walletKeyPair,
+        parentTokenPubkey,
         { 
           uuid : null,
           name: metadataJSON.name,

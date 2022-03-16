@@ -68,9 +68,11 @@ export interface MixtureData {
   export const createMixture = async function (
     anchorProgram: anchor.Program,
     payerWallet: Keypair,
-    mixtureData: MixtureData,
+    parentTokenPubkey: PublicKey,
+    mixtureData: MixtureData
   ) {
-    const mixtureAccount = Keypair.generate(); //TODO:부모 NFT 토큰을 받아서 account 주소를 fromSeed로 Keypair 만들자.
+    const seed = parentTokenPubkey.toBytes().slice(0, 32);
+    const mixtureAccount = Keypair.fromSeed(seed); 
     let uuid = uuidFromConfigPubkey(mixtureAccount.publicKey);
     mixtureData.uuid = uuid;
     const totalShare = (mixtureData.creators || []).reduce(
@@ -86,7 +88,7 @@ export interface MixtureData {
       uuid: uuid,
       txId: await anchorProgram.rpc.initializeMixtureMachine(mixtureData, {
         accounts: {
-          mixtureMachine: mixtureAccount.publicKey, // TODO : mixture로 변경하기          
+          mixtureMachine: mixtureAccount.publicKey, 
           authority: payerWallet.publicKey,
           payer: payerWallet.publicKey,
           systemProgram: SystemProgram.programId,

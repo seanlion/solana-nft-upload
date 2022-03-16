@@ -19,7 +19,8 @@ export async function ComposableNFTUpload(
     metadata:string,//json
     keypair:any, // solana keypair 주소
     env:string,
-    mintIndex: number // 합성할 nft 이름(숫자)
+    mintIndex: number, // 합성할 nft 이름(숫자),
+    parentTokenAddress:string
 ): Promise<{ 
     status: string; 
     arweaveLink: string; 
@@ -28,6 +29,7 @@ export async function ComposableNFTUpload(
     if (!fs.existsSync(CACHE_PATH)) {
       fs.mkdirSync(CACHE_PATH);
     }
+    console.log("parentTokenAddress : ", parentTokenAddress);
     const cacheName = 'temp';
     const walletKeyPair = loadWalletKey(keypair);
     const mixtureProgram = await loadMixtureProgram(walletKeyPair, env);
@@ -37,7 +39,8 @@ export async function ComposableNFTUpload(
       env,
       walletKeyPair,
       mixtureProgram,
-      mintIndex
+      mintIndex,
+      parentTokenAddress
     }).then((result) => {
       console.log("uploadArweave result:", result);
       return result;

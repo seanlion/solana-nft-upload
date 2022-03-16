@@ -2,15 +2,17 @@ import {ComposableNFTUpload} from "./mixture-machine";
 
 export function routesFunc(app, _id){
     app.post('/upload', (req,res)=>{
-        let metadata = req.body.metadata // json을 받아야 함.
-        let network = req.body.network // string
+        let metadata = req.body.metadata
+        let network = req.body.network
         let composableNFTIndex = req.body.composableNFTIndex
+        let parentNFTAddress = req.body.parentNFT
         if(metadata && network){
             ComposableNFTUpload(
                 metadata, 
                 _id, 
                 network,
-                composableNFTIndex
+                composableNFTIndex,
+                parentNFTAddress
                 )
             .then((result)=>{
                 res.json({
