@@ -6,7 +6,8 @@
     "build": "tsc -p ./src",
     "watch": "tsc -w -p ./src",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "nodemon --watch \"src/**/*.ts\" --exec \"ts-node\" src/server.ts"
+    "start": "nodemon --watch \"src/**/*.ts\" --exec \"ts-node\" src/server.ts",
+    "dev": "pm2 start ecosystem.config.js --only mixture-dev --env development"
   },
   "keywords": [],
   "author": "skyhs3507@likelion.org",
@@ -47,6 +48,7 @@
     "mongodb": "^4.4.1",
     "node-fetch": "^2.6.1",
     "nodemon": "^2.0.15",
+    "pm2": "^5.2.0",
     "ts-node": "^10.7.0",
     "weighted": "^0.3.0"
   },

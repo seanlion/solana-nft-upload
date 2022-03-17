@@ -121,3 +121,4 @@ package-lock.json
 .cache/
 _genid.json
 todo.md
+ecosystem.config.js
