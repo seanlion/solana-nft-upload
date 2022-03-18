@@ -5,7 +5,6 @@ import {
     AccountInfo,
   } from '@solana/web3.js';
 import {
-
   MIXTURE_PROGRAM_ID,
 } from './constants';
 import * as anchor from '@project-serum/anchor';
